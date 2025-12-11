@@ -1,4 +1,3 @@
-// api/log-vpn.js
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -6,38 +5,14 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
-    const webhookUrl = process.env.WEBHOOK_LINK; // 🔐 kommt aus Vercel Env
+    const webhookUrl = process.env.WEBHOOK_LINK;
 
     if (!webhookUrl) {
       return res.status(500).json({ error: "WEBHOOK_LINK not configured" });
     }
 
-    const {
-      ip = "unknown",
-      vpn = "unknown",
-      proxy = "unknown",
-      datacenter = "unknown",
-      dismissed = "unknown",
-      userAgent = "",
-      timestamp = new Date().toISOString()
-    } = body;
-
     const payload = {
-      embeds: [
-        {
-          title: "VPN Check Result",
-          color: vpn || proxy ? 0xff0000 : datacenter ? 0xffa500 : 0x00ff00,
-          fields: [
-            { name: "IP", value: String(ip), inline: false },
-            { name: "VPN", value: String(vpn), inline: true },
-            { name: "Proxy", value: String(proxy), inline: true },
-            { name: "Datacenter", value: String(datacenter), inline: true },
-            { name: "Dismissed", value: String(dismissed), inline: true },
-            { name: "User Agent", value: userAgent.substring(0, 250), inline: false },
-            { name: "Timestamp", value: timestamp, inline: false }
-          ]
-        }
-      ]
+      content: `Bad URL hash accessed\nUser-Agent: ${body.userAgent || "unknown"}`
     };
 
     await fetch(webhookUrl, {
