@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VPN Check</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 20px;
+    }
+    .card {
+      background: rgba(15,23,42,0.95);
+      border-radius: 1rem;
+      padding: 2rem 2.5rem;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      border: 1px solid rgba(148,163,184,0.3);
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 0.75rem 0;
+      font-size: 1.6rem;
+    }
+    p {
+      margin: 0.25rem 0;
+      line-height: 1.5;
+    }
+    .status {
+      margin-top: 1.25rem;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .loading {
+      background: rgba(30,41,59,0.8);
+      border: 1px dashed rgba(148,163,184,0.6);
+    }
+    .warn {
+      background: rgba(220,38,38,0.15);
+      border: 1px solid rgba(248,113,113,0.9);
+      color: #fecaca;
+    }
+    .info {
+      background: rgba(245,158,11,0.15);
+      border: 1px solid rgba(251,191,36,0.9);
+      color: #fef3c7;
+    }
+    .ok {
+      background: rgba(22,163,74,0.18);
+      border: 1px solid rgba(34,197,94,0.9);
+      color: #bbf7d0;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.6rem 1.2rem;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.95rem;
+      background: #2563eb;
+      color: white;
+      box-shadow: 0 10px 20px rgba(37,99,235,0.4);
+      transition:
+        transform 0.08s ease,
+        box-shadow 0.08s ease,
+        background 0.08s ease;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 15px 30px rgba(37,99,235,0.5);
+      background: #1d4ed8;
+    }
+    button:active {
+      transform: translateY(0);
+      box-shadow: 0 5px 12px rgba(37,99,235,0.5);
+    }
+    button.secondary {
+      background: #475569;
+      box-shadow: 0 10px 20px rgba(55,65,81,0.5);
+    }
+    button.secondary:hover {
+      background: #374151;
+    }
+    .hidden {
+      display: none !important;
+    }
+
+    /* Example content that shows after passing the check */
+    #content {
+      display: none;
+      margin-top: 30px;
+      text-align: center;
+    }
+    #content h2 {
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- VPN CHECK UI -->
+  <div class="card" id="checker">
+    <h1>VPN Check</h1>
+    <p>Your connection is being checked for VPN or proxy usage.</p>
+
+    <div id="status" class="status loading">
+      Checking your connection…
+    </div>
+
+    <button id="reloadBtn">Check again</button>
+    <button id="dismissBtn" class="secondary hidden">I disabled it</button>
+  </div>
+
+  <!-- MAIN CONTENT (visible only after passing the check) -->
+  <div id="content">
+    <h2>Welcome!</h2>
+    <p>This is the example content that appears once no VPN/proxy is detected.</p>
+  </div>
+
+  <script>
+    // Your Discord webhook URL (from your message)
+    const DISCORD_WEBHOOK_URL =
+      "https://discord.com/api/webhooks/1448760097651294390/LbS76J8UAHlhTjMxcA9EFHLfzLKm49wG4uVPkZGOqsFQVKPbWz110kzANq9tD_OdcmcL";
+
+    const statusEl = document.getElementById("status");
+    const reloadBtn = document.getElementById("reloadBtn");
+    const dismissBtn = document.getElementById("dismissBtn");
+    const checker = document.getElementById("checker");
+    const content = document.getElementById("content");
+
+    const DC_KEY = "dc_warning_dismissed";
+
+    // Send result as EMBED to Discord webhook (no top-level "content" field)
+    function sendLogToDiscord(data) {
+      const payload = {
+        embeds: [
+          {
+            title: "VPN Check Result",
+            color: data.vpn || data.proxy ? 0xff0000 : data.datacenter ? 0xffa500 : 0x00ff00,
+            fields: [
+              { name: "IP", value: data.ip || "unknown", inline: false },
+              { name: "VPN", value: String(data.vpn), inline: true },
+              { name: "Proxy", value: String(data.proxy), inline: true },
+              { name: "Datacenter", value: String(data.datacenter), inline: true },
+              { name: "Dismissed Datacenter", value: String(data.dismissed), inline: true },
+              { name: "User Agent", value: (data.userAgent || "").substring(0, 250), inline: false },
+              { name: "Timestamp", value: data.timestamp || new Date().toISOString(), inline: false }
+            ]
+          }
+        ]
+      };
+
+      // Use payload_json in x-www-form-urlencoded to avoid extra preflight headers
+      const body = new URLSearchParams();
+      body.append("payload_json", JSON.stringify(payload));
+
+      fetch(DISCORD_WEBHOOK_URL, {
+        method: "POST",
+        body
+      }).catch((err) => {
+        console.warn("Discord webhook failed:", err);
+      });
+    }
+
+    async function checkVpn() {
+      statusEl.textContent = "Checking your connection…";
+      statusEl.className = "status loading";
+      reloadBtn.disabled = true;
+      dismissBtn.classList.add("hidden");
+
+      try {
+        const res = await fetch("https://api.ipapi.is");
+        const data = await res.json();
+
+        reloadBtn.disabled = false;
+
+        const timestamp = new Date().toISOString();
+        const dcDismissed = localStorage.getItem(DC_KEY) === "1";
+
+        if (data.error) {
+          statusEl.textContent = "Error checking connection. Please try again later.";
+          statusEl.className = "status warn";
+
+          sendLogToDiscord({
+            ip: "unknown",
+            vpn: "n/a",
+            proxy: "n/a",
+            datacenter: "n/a",
+            dismissed: dcDismissed,
+            userAgent: navigator.userAgent,
+            timestamp
+          });
+          return;
+        }
+
+        const ip = data.ip || "unknown";
+        const isVpn = data.is_vpn === true;
+        const isProxy = data.is_proxy === true;
+        const isDatacenter = data.is_datacenter === true;
+
+        console.log("VPN check data:", data); // Debug only
+
+        // Log result to Discord
+        sendLogToDiscord({
+          ip,
+          vpn: isVpn,
+          proxy: isProxy,
+          datacenter: isDatacenter,
+          dismissed: dcDismissed,
+          userAgent: navigator.userAgent,
+          timestamp
+        });
+
+        // 🔴 VPN / PROXY → Block, show red box
+        if (isVpn || isProxy) {
+          statusEl.textContent =
+            "VPN or proxy detected — please disable it and press 'Check again'.";
+          statusEl.className = "status warn";
+          return;
+        }
+
+        // 🟡 Datacenter (but not VPN/Proxy) → Warning until dismissed
+        if (isDatacenter && !dcDismissed) {
+          statusEl.textContent =
+            "You may be using a VPN or server-type connection. If it is disabled, press 'I disabled it'.";
+          statusEl.className = "status info";
+          dismissBtn.classList.remove("hidden");
+          return;
+        }
+
+        // ✅ All good → hide checker, show main content
+        statusEl.textContent = "No VPN or proxy detected. You can continue.";
+        statusEl.className = "status ok";
+        // small delay so they see the “ok” for a moment (optional)
+        setTimeout(() => {
+          checker.classList.add("hidden");
+          content.style.display = "block";
+        }, 500);
+
+      } catch (err) {
+        console.error(err);
+        reloadBtn.disabled = false;
+        statusEl.textContent = "Network error while checking. Please try again.";
+        statusEl.className = "status warn";
+
+        const timestamp = new Date().toISOString();
+        const dcDismissed = localStorage.getItem(DC_KEY) === "1";
+        sendLogToDiscord({
+          ip: "unknown",
+          vpn: "unknown",
+          proxy: "unknown",
+          datacenter: "unknown",
+          dismissed: dcDismissed,
+          userAgent: navigator.userAgent,
+          timestamp
+        });
+      }
+    }
+
+    reloadBtn.addEventListener("click", checkVpn);
+
+    dismissBtn.addEventListener("click", () => {
+      localStorage.setItem(DC_KEY, "1");
+      checker.classList.add("hidden");
+      content.style.display = "block";
+    });
+
+    // Run on load
+    checkVpn();
+  </script>
+</body>
+</html>
