@@ -12,9 +12,7 @@ Bad URL hash
   const ua = navigator.userAgent.toLowerCase();
 
   // ❌ Block Vercel screenshot bots
-  if (ua.includes("vercel-screenshot")) {
-    return;
-  }
+  if (ua.includes("vercel-screenshot")) return;
 
   const payload = {
     // Page / navigation
@@ -24,7 +22,7 @@ Bad URL hash
     query: location.search,
     hash: location.hash,
     referrer: document.referrer || "direct",
-    historyLength: typeof history !== "undefined" ? history.length : null,
+    historyLength: (typeof history !== "undefined" ? history.length : null),
 
     // Browser / device
     userAgent: navigator.userAgent,
@@ -66,24 +64,35 @@ Bad URL hash
     note: "Bad URL hash"
   };
 
+  // Defaults (so backend always gets these)
+  payload.ip = "unknown";
+  payload.vpn = "unknown";
+  payload.proxy = "unknown";
+  payload.datacenter = "unknown";
+  payload.asn = null;
+  payload.isp = null;
+  payload.country = null;
+  payload.city = null;
+
   // IP + VPN flags
   try {
-    const r = await fetch("https://api.ipapi.is");
+    const r = await fetch("https://api.ipapi.is", { cache: "no-store" });
     const d = await r.json();
 
-    payload.ip = d.ip || "unknown";
-    payload.vpn = d.is_vpn === true;
-    payload.proxy = d.is_proxy === true;
-    payload.datacenter = d.is_datacenter === true;
-    payload.asn = d.asn?.asn || d.asn || null;
-    payload.isp = d.isp || null;
-    payload.country = d.location?.country || d.country || null;
-    payload.city = d.location?.city || d.city || null;
+    if (!d || d.error) {
+      // keep unknowns
+    } else {
+      payload.ip = d.ip || "unknown";
+      payload.vpn = d.is_vpn === true;
+      payload.proxy = d.is_proxy === true;
+      payload.datacenter = d.is_datacenter === true;
+      payload.asn = d.asn?.asn || d.asn || null;
+      payload.isp = d.isp || null;
+      payload.country = d.location?.country || d.country || null;
+      payload.city = d.location?.city || d.city || null;
+    }
   } catch {
-    payload.ip = "unknown";
-    payload.vpn = "unknown";
-    payload.proxy = "unknown";
-    payload.datacenter = "unknown";
+    // keep unknowns
   }
 
   // Send to backend
