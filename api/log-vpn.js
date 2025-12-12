@@ -74,7 +74,7 @@ export default async function handler(req, res) {
 
     const embed = {
       title: "Page Access Logged",
-      color: (b.vpn === true || b.proxy === true) ? 0xff0000 : (b.datacenter === true ? 0xffa500 : 0x5865F2),
+      color: (b.vpn === true || b.proxy === true) ? 0xff0000 : (b.datacenter === true ? 0xffa500 : 	#0x008000),
       fields: [
         { name: "IP / Flags", value: clip(ipLine || "n/a", 1024), inline: false },
         { name: "Page", value: clip(pageLine || "n/a", 1024), inline: false },
