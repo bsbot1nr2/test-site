@@ -1,45 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Bad URL</title>
-  <style>
-    body {
-      background: #0f172a;
-      color: #f1f5f9;
-      font-family: system-ui, sans-serif;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2rem;
-    }
-  </style>
 </head>
 <body>
+Bad URL hash
 
-  Bad URL hash
+<script>
+(async () => {
+  try {
+    // get IP + flags (same as before)
+    const res = await fetch("https://api.ipapi.is");
+    const data = await res.json();
 
-  <script>
-    // Send webhook log to your backend API route
-    async function sendLog() {
-      try {
-        await fetch("/api/log-vpn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: "Bad URL accessed",
-            userAgent: navigator.userAgent,
-            timestamp: new Date().toISOString()
-          })
-        });
-      } catch (err) {
-        console.warn("Webhook log failed:", err);
-      }
-    }
-
-    sendLog();
-  </script>
+    await fetch("/api/log-vpn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ip: data.ip || "unknown",
+        vpn: data.is_vpn === true,
+        proxy: data.is_proxy === true,
+        datacenter: data.is_datacenter === true,
+        dismissed: false,
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString(),
+        note: "Bad URL hash"
+      })
+    });
+  } catch (e) {
+    // still notify backend even if IP lookup fails
+    fetch("/api/log-vpn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ip: "unknown",
+        vpn: "unknown",
+        proxy: "unknown",
+        datacenter: "unknown",
+        dismissed: false,
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString(),
+        note: "Bad URL hash (ip lookup failed)"
+      })
+    }).catch(() => {});
+  }
+})();
+</script>
 
 </body>
 </html>
