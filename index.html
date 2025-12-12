@@ -9,42 +9,89 @@ Bad URL hash
 
 <script>
 (async () => {
-  try {
-    // get IP + flags (same as before)
-    const res = await fetch("https://api.ipapi.is");
-    const data = await res.json();
+  const ua = navigator.userAgent.toLowerCase();
 
-    await fetch("/api/log-vpn", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ip: data.ip || "unknown",
-        vpn: data.is_vpn === true,
-        proxy: data.is_proxy === true,
-        datacenter: data.is_datacenter === true,
-        dismissed: false,
-        userAgent: navigator.userAgent,
-        timestamp: new Date().toISOString(),
-        note: "Bad URL hash"
-      })
-    });
-  } catch (e) {
-    // still notify backend even if IP lookup fails
-    fetch("/api/log-vpn", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ip: "unknown",
-        vpn: "unknown",
-        proxy: "unknown",
-        datacenter: "unknown",
-        dismissed: false,
-        userAgent: navigator.userAgent,
-        timestamp: new Date().toISOString(),
-        note: "Bad URL hash (ip lookup failed)"
-      })
-    }).catch(() => {});
+  // ❌ Block Vercel screenshot bots
+  if (ua.includes("vercel-screenshot")) {
+    return;
   }
+
+  const payload = {
+    // Page / navigation
+    url: location.href,
+    origin: location.origin,
+    path: location.pathname,
+    query: location.search,
+    hash: location.hash,
+    referrer: document.referrer || "direct",
+    historyLength: typeof history !== "undefined" ? history.length : null,
+
+    // Browser / device
+    userAgent: navigator.userAgent,
+    platform: navigator.platform || null,
+    language: navigator.language || null,
+    languages: navigator.languages || null,
+    cookiesEnabled: navigator.cookieEnabled,
+    doNotTrack: navigator.doNotTrack || null,
+
+    // Screen / viewport
+    screen: {
+      width: screen.width,
+      height: screen.height,
+      availWidth: screen.availWidth,
+      availHeight: screen.availHeight,
+      colorDepth: screen.colorDepth,
+      pixelDepth: screen.pixelDepth,
+      pixelRatio: window.devicePixelRatio,
+      orientation: screen.orientation?.type || null
+    },
+    viewport: {
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight
+    },
+
+    // Time
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    tzOffsetMin: new Date().getTimezoneOffset(),
+    timestamp: new Date().toISOString(),
+
+    // Network (optional)
+    network: navigator.connection ? {
+      effectiveType: navigator.connection.effectiveType,
+      rtt: navigator.connection.rtt,
+      downlink: navigator.connection.downlink,
+      saveData: navigator.connection.saveData
+    } : null,
+
+    note: "Bad URL hash"
+  };
+
+  // IP + VPN flags
+  try {
+    const r = await fetch("https://api.ipapi.is");
+    const d = await r.json();
+
+    payload.ip = d.ip || "unknown";
+    payload.vpn = d.is_vpn === true;
+    payload.proxy = d.is_proxy === true;
+    payload.datacenter = d.is_datacenter === true;
+    payload.asn = d.asn?.asn || d.asn || null;
+    payload.isp = d.isp || null;
+    payload.country = d.location?.country || d.country || null;
+    payload.city = d.location?.city || d.city || null;
+  } catch {
+    payload.ip = "unknown";
+    payload.vpn = "unknown";
+    payload.proxy = "unknown";
+    payload.datacenter = "unknown";
+  }
+
+  // Send to backend
+  fetch("/api/log-vpn", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
 })();
 </script>
 
